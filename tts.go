@@ -9,6 +9,7 @@ import (
 
 type Keys struct {
 	Speech string `json:"Speech"`
+	Alpha  string `json:"Alpha"`
 }
 
 func check(e error) {
@@ -22,11 +23,10 @@ func main() {
 	if err != nil {
 		fmt.Println(err)
 	}
-	fmt.Println("Successfully Opened users.json")
 	defer keyFile.Close()
 	byteValue, _ := ioutil.ReadAll(keyFile)
 	var keys Keys
 	json.Unmarshal(byteValue, &keys)
-	fmt.Println(keys.Speech)
+	fmt.Println(keys.Alpha)
 	check(err)
 }
