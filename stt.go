@@ -22,6 +22,8 @@ const (
 		"language=en-US"
 )
 
+var keys Keys
+
 func handleRequest(w http.ResponseWriter, r *http.Request) {
 	t := map[string]interface{}{}
 	json.NewDecoder(r.Body).Decode(&t)
@@ -36,14 +38,6 @@ func handleRequest(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleResponse(speech []byte) (string, error) {
-	keyFile, err := os.Open("keys.json")
-	if err != nil {
-		fmt.Println(err)
-	}
-	defer keyFile.Close()
-	byteValue, _ := ioutil.ReadAll(keyFile)
-	var keys Keys
-	json.Unmarshal(byteValue, &keys)
 	client := &http.Client{}
 	req, err := http.NewRequest("POST", URI, bytes.NewReader(speech))
 	check(err)
@@ -65,6 +59,13 @@ func check(e error) {
 }
 
 func main() {
+	keyFile, err := os.Open("keys.json")
+	if err != nil {
+		fmt.Println(err)
+	}
+	defer keyFile.Close()
+	byteValue, _ := ioutil.ReadAll(keyFile)
+	json.Unmarshal(byteValue, &keys)
 	r := mux.NewRouter()
 	// document
 	r.HandleFunc("/stt", handleRequest).Methods("POST")
