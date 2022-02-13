@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/gorilla/mux"
 	"io/ioutil"
@@ -26,15 +27,38 @@ var keys Keys
 
 func handleRequest(w http.ResponseWriter, r *http.Request) {
 	t := map[string]interface{}{}
-	json.NewDecoder(r.Body).Decode(&t)
-	speech := t["speech"].(string)
-	data, error := base64.StdEncoding.DecodeString(speech)
-	check(error)
-	text, err := handleResponse(data)
-	check(err)
-	u := map[string]interface{}{"text": text}
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(u)
+	err := json.NewDecoder(r.Body).Decode(&t)
+	if err == nil {
+		speech := t["speech"].(string)
+		data, err := base64.StdEncoding.DecodeString(speech)
+		if err == nil {
+			text, err := handleResponse(data)
+			if err == nil {
+				check(err)
+				u := map[string]interface{}{"text": text}
+				w.WriteHeader(http.StatusOK)
+				err := json.NewEncoder(w).Encode(u)
+				if err != nil {
+					w.WriteHeader(http.StatusInternalServerError)
+					_, err := w.Write([]byte("Something went wrong encoding the response"))
+					check(err)
+				}
+			} else {
+				w.WriteHeader(http.StatusInternalServerError)
+				_, err := w.Write([]byte("Something went wrong contacting the STT provider"))
+				check(err)
+			}
+		} else {
+			w.WriteHeader(http.StatusBadRequest)
+			_, err := w.Write([]byte("Speech is not a Base 64 encoded string"))
+			check(err)
+		}
+	} else {
+		w.WriteHeader(http.StatusBadRequest)
+		_, err := w.Write([]byte("Request format is not JSON"))
+		check(err)
+	}
+
 }
 
 func handleResponse(speech []byte) (string, error) {
@@ -44,10 +68,14 @@ func handleResponse(speech []byte) (string, error) {
 	req.Header.Set("Content-Type", "audio/wav;codecs=audio/pcm;samplerate=16000")
 	req.Header.Set("Ocp-Apim-Subscription-Key", keys.Speech)
 	rsp, err := client.Do(req)
+	if rsp.StatusCode != 200 {
+		return "", errors.New("microsoft didn't like that")
+	}
 	defer rsp.Body.Close()
 	body, err := ioutil.ReadAll(rsp.Body)
 	t := map[string]interface{}{}
-	json.NewDecoder(bytes.NewReader(body)).Decode(&t)
+	err = json.NewDecoder(bytes.NewReader(body)).Decode(&t)
+	check(err)
 	text := t["DisplayText"].(string)
 	return text, err
 }
@@ -65,9 +93,11 @@ func main() {
 	}
 	defer keyFile.Close()
 	byteValue, _ := ioutil.ReadAll(keyFile)
-	json.Unmarshal(byteValue, &keys)
+	err = json.Unmarshal(byteValue, &keys)
+	check(err)
 	r := mux.NewRouter()
 	// document
 	r.HandleFunc("/stt", handleRequest).Methods("POST")
-	http.ListenAndServe(":3002", r)
+	err = http.ListenAndServe(":3002", r)
+	check(err)
 }
