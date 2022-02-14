@@ -18,15 +18,9 @@ type Keys struct {
 	Alpha  string `json:"Alpha"`
 }
 
+var keys Keys
+
 func AlphaReq(question string) (string, error) {
-	keyFile, err := os.Open("keys.json")
-	if err != nil {
-		fmt.Println(err)
-	}
-	defer keyFile.Close()
-	byteValue, _ := ioutil.ReadAll(keyFile)
-	var keys Keys
-	json.Unmarshal(byteValue, &keys)
 	client := &http.Client{}
 	uri := URI + "?appid=" + keys.Alpha + "&i=" + url.QueryEscape(question)
 	req, err := http.NewRequest("GET", uri, nil)
@@ -39,17 +33,36 @@ func AlphaReq(question string) (string, error) {
 func Alpha(w http.ResponseWriter, r *http.Request) {
 	t := map[string]interface{}{}
 	if err := json.NewDecoder(r.Body).Decode(&t); err == nil {
-		answer, err := AlphaReq(t["text"].(string))
-		responseBody := map[string]interface{}{"text": answer}
-		w.WriteHeader(http.StatusOK)
-		fmt.Println(err)
-		json.NewEncoder(w).Encode(responseBody)
+		question := t["text"].(string)
+		answer, err := AlphaReq(question)
+		if err == nil {
+			responseBody := map[string]interface{}{"text": answer}
+			w.WriteHeader(http.StatusOK)
+			json.NewEncoder(w).Encode(responseBody)
+		} else {
+			w.WriteHeader(http.StatusInternalServerError)
+			w.Write([]byte("Something went wrong when contacting the Alpha API"))
+		}
+	} else {
+		w.WriteHeader(http.StatusBadRequest)
+		_, err = w.Write([]byte("Input not in JSON format"))
+		check(err)
 	}
 }
 
 func main() {
+	keyFile, err := os.Open("keys.json")
+	if err != nil {
+		fmt.Println(err)
+	}
+	defer keyFile.Close()
+	byteValue, err := ioutil.ReadAll(keyFile)
+	check(err)
+	err = json.Unmarshal(byteValue, &keys)
+	check(err)
 	r := mux.NewRouter()
 	// document
 	r.HandleFunc("/alpha", Alpha).Methods("POST")
-	http.ListenAndServe(":3000", r)
+	err = http.ListenAndServe(":3000", r)
+	check(err)
 }
