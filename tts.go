@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/gorilla/mux"
 	"io"
@@ -22,15 +23,39 @@ const (
 		"cognitiveservices/v1"
 )
 
+var keys Keys
+
 func handleRequest(w http.ResponseWriter, r *http.Request) {
 	t := map[string]interface{}{}
-	json.NewDecoder(r.Body).Decode(&t)
-	text := t["text"].(string)
-	speech, err := handleResponse(xmlFormat(text))
-	check(err)
-	u := map[string]interface{}{"speech": speech}
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(u)
+	err := json.NewDecoder(r.Body).Decode(&t)
+	if err == nil {
+		text, present := t["text"].(string)
+		if present {
+			speech, err := handleResponse(xmlFormat(text))
+			if err == nil {
+				u := map[string]interface{}{"speech": speech}
+				w.WriteHeader(http.StatusOK)
+				err := json.NewEncoder(w).Encode(u)
+				if err != nil {
+					w.WriteHeader(http.StatusInternalServerError)
+					_, err := w.Write([]byte("Could not encode JSON"))
+					check(err)
+				}
+			} else {
+				w.WriteHeader(http.StatusInternalServerError)
+				_, err := w.Write([]byte("Something went wrong contacting the text to speech api"))
+				check(err)
+			}
+		} else {
+			w.WriteHeader(http.StatusBadRequest)
+			_, err := w.Write([]byte("Incorrect JSON format"))
+			check(err)
+		}
+	} else {
+		w.WriteHeader(http.StatusBadRequest)
+		_, err := w.Write([]byte("Request not in JSON format"))
+		check(err)
+	}
 }
 
 func xmlFormat(text string) string {
@@ -38,27 +63,27 @@ func xmlFormat(text string) string {
 }
 
 func handleResponse(text string) ([]byte, error) {
-	keyFile, err := os.Open("keys.json")
-	if err != nil {
-		fmt.Println(err)
-	}
-	check(err)
-	defer keyFile.Close()
-	byteValue, _ := ioutil.ReadAll(keyFile)
-	var keys Keys
-	json.Unmarshal(byteValue, &keys)
 	client := &http.Client{}
 	req, err := http.NewRequest("POST", URI, bytes.NewBuffer([]byte(text)))
-	check(err)
+	if err != nil {
+		return nil, err
+	}
 	req.Header.Set("Content-Type", "application/ssml+xml")
 	req.Header.Set("Ocp-Apim-Subscription-Key", keys.Speech)
 	req.Header.Set("X-Microsoft-OutputFormat", "riff-16khz-16bit-mono-pcm")
-	rsp, err2 := client.Do(req)
-	check(err2)
+	rsp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
 	defer rsp.Body.Close()
 	b, err := io.ReadAll(rsp.Body)
-	check(err)
-	fmt.Println(rsp.StatusCode)
+	if err != nil {
+		return nil, err
+	}
+	if rsp.StatusCode != 200 {
+		fmt.Println(rsp.StatusCode)
+		return nil, errors.New("microsoft didn't like that")
+	}
 	return b, nil
 }
 
@@ -69,8 +94,18 @@ func check(e error) {
 }
 
 func main() {
+	keyFile, err := os.Open("keys.json")
+	if err != nil {
+		fmt.Println(err)
+	}
+	check(err)
+	defer keyFile.Close()
+	byteValue, _ := ioutil.ReadAll(keyFile)
+	err = json.Unmarshal(byteValue, &keys)
+	check(err)
 	r := mux.NewRouter()
 	// document
 	r.HandleFunc("/tts", handleRequest).Methods("POST")
-	http.ListenAndServe(":3003", r)
+	err = http.ListenAndServe(":3003", r)
+	check(err)
 }
