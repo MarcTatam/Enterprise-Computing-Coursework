@@ -172,7 +172,7 @@ func handleReq(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			w.WriteHeader(http.StatusOK)
-			err := json.NewEncoder(w).Encode(rsp)
+			err = json.NewEncoder(w).Encode(rsp)
 			if err != nil {
 				// Error handling if response could not be encoded
 				w.WriteHeader(http.StatusInternalServerError)
@@ -196,6 +196,6 @@ func main() {
 	r := mux.NewRouter()
 	// End point
 	r.HandleFunc("/alexa", handleReq).Methods("POST")
-	err = http.ListenAndServe(":3000", r)
+	err := http.ListenAndServe(":3000", r)
 	check(err)
 }
