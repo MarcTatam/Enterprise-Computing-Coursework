@@ -21,7 +21,7 @@ func check(e error) {
 }
 
 // contactAlpha Asks the alpha microservice the question.
-// Takes the question as a map argument and responds with a map answer.
+// Takes the question as a map parameter and responds with a map answer.
 func contactAlpha(query map[string]interface{}) (map[string]interface{}, error) {
 	// Convert map to JSON string
 	jsonBytes, err := json.Marshal(query)
@@ -62,7 +62,7 @@ func contactAlpha(query map[string]interface{}) (map[string]interface{}, error) 
 }
 
 // contactTTS asks the TTS microservice to convert text to speech.
-// Takes the question as a map argument and responds with a map answer.
+// Takes the text as a map parameter and responds with a map answer containing a base64 encoded answer.
 func contactTTS(query map[string]interface{}) (map[string]interface{}, error) {
 	// Convert map to JSON string
 	jsonBytes, err := json.Marshal(query)
@@ -103,7 +103,7 @@ func contactTTS(query map[string]interface{}) (map[string]interface{}, error) {
 }
 
 // contactTTS asks the TTS microservice to convert text to speech.
-// Takes the question as a map argument and responds with a map answer.
+// Takes the speech as a map parameter containing a base64 encoded value and responds with a map answer.
 func contactSTT(query map[string]interface{}) (map[string]interface{}, error) {
 	// Convert map to JSON string
 	jsonBytes, err := json.Marshal(query)
@@ -143,34 +143,44 @@ func contactSTT(query map[string]interface{}) (map[string]interface{}, error) {
 	return u, nil
 }
 
+// handleReq handles any requests coming into the microservice.
+// The parameters are a http.ResponseWriter for the response and a http.Request representing a request.
 func handleReq(w http.ResponseWriter, r *http.Request) {
 	t := map[string]interface{}{}
 	// Decode request
 	err := json.NewDecoder(r.Body).Decode(&t)
 	if err == nil {
+		// Check for JSON validity
 		_, present := t["speech"]
 		if present {
+			//Convert speech to text
 			rsp, err := contactSTT(t)
 			if err != nil {
+				// Error handling for STT errors
 				w.WriteHeader(http.StatusInternalServerError)
 				_, err = w.Write([]byte("Error contacting speech to text"))
 				check(err)
 				return
 			}
+			// Ask question to alpha
 			rsp, err = contactAlpha(rsp)
 			if err != nil {
+				// Error handling for Alpha errors
 				w.WriteHeader(http.StatusInternalServerError)
 				_, err = w.Write([]byte("Error contacting alpha"))
 				check(err)
 				return
 			}
+			// Convert text to speech
 			rsp, err = contactTTS(rsp)
 			if err != nil {
+				// Error handling for TTS errors
 				w.WriteHeader(http.StatusInternalServerError)
 				_, err = w.Write([]byte("Error contacting text to speech"))
 				check(err)
 				return
 			}
+			// Write response
 			w.WriteHeader(http.StatusOK)
 			err = json.NewEncoder(w).Encode(rsp)
 			if err != nil {
@@ -180,11 +190,13 @@ func handleReq(w http.ResponseWriter, r *http.Request) {
 				check(err)
 			}
 		} else {
+			// Error handling for incorrectly formatted JSON
 			w.WriteHeader(http.StatusBadRequest)
 			_, err = w.Write([]byte("JSON in incorrect format"))
 			check(err)
 		}
 	} else {
+		// Error handling for non JSON requests
 		w.WriteHeader(http.StatusBadRequest)
 		_, err = w.Write([]byte("Request not in JSON format"))
 		check(err)
